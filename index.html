@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f8f6f1" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Wellbeing" />
+  <title>App Prototype</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="assets/app-icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=27" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="brand" data-go="welcome" aria-label="Go to welcome page">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>StudyWell</span>
+      </button>
+      <div class="step-label" id="stepLabel"></div>
+    </header>
+
+    <main id="app" aria-live="polite"></main>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <template id="welcomeTemplate">
+    <section class="screen welcome-screen">
+      <div class="welcome-copy">
+        <div class="eyebrow"><span></span> Welcome</div>
+        <h1>Create an account<br>or log in.</h1>
+        <p>Use your email and a verification code to continue.</p>
+        <div class="welcome-actions">
+          <button class="button primary" data-go="signup">Create an account <span>→</span></button>
+          <button class="button secondary" data-go="login">Log in</button>
+        </div>
+        <p class="microcopy">Free to join. Your information stays private.</p>
+      </div>
+      <div class="wellbeing-visual" aria-hidden="true">
+        <div class="sun"></div>
+        <div class="orbit orbit-one"></div>
+        <div class="orbit orbit-two"></div>
+        <div class="card-float card-one"><span>5 min</span><b>Take a real break</b></div>
+        <div class="card-float card-two"><span>Today</span><b>You are doing enough.</b></div>
+        <div class="figure"><span class="head"></span><span class="body"></span></div>
+        <div class="ground"></div>
+      </div>
+    </section>
+  </template>
+
+  <template id="authTemplate">
+    <section class="screen centered-screen">
+      <div class="form-card narrow">
+        <button class="back-link" data-go="welcome">← Back</button>
+        <div class="icon-badge">✦</div>
+        <p class="eyebrow centered" id="authEyebrow"></p>
+        <h2 id="authTitle"></h2>
+        <p class="form-intro" id="authIntro"></p>
+        <form id="authForm" novalidate>
+          <label for="email">Email address</label>
+          <div class="input-with-button">
+            <input id="email" type="email" autocomplete="email" placeholder="you@example.com" required />
+            <button type="button" class="text-button" id="sendCode">Send code</button>
+          </div>
+          <p class="field-error" id="emailError"></p>
+
+          <label for="code">Verification code</label>
+          <input id="code" inputmode="numeric" maxlength="6" placeholder="6 digit code" required />
+          <p class="field-hint">For this prototype, the code will appear on screen.</p>
+          <p class="field-error" id="codeError"></p>
+
+          <button class="button primary full" id="authSubmit" type="submit"></button>
+        </form>
+        <p class="switch-copy" id="switchCopy"></p>
+      </div>
+    </section>
+  </template>
+
+  <template id="successTemplate">
+    <section class="screen centered-screen">
+      <div class="form-card success-card">
+        <div class="success-check">✓</div>
+        <p class="eyebrow centered">Account created</p>
+        <h2>Registration successful</h2>
+        <p>Your account is ready. This is your unique user ID.</p>
+        <div class="id-card">
+          <span>Your ID</span>
+          <strong id="newUserId"></strong>
+          <button id="copyId" type="button">Copy ID</button>
+        </div>
+        <p class="field-hint">Keep this ID. Friends and family can use it to connect with you.</p>
+        <button class="button primary full" data-go="profile">Continue</button>
+      </div>
+    </section>
+  </template>
+
+  <template id="profileTemplate">
+    <section class="screen centered-screen">
+      <div class="form-card wide">
+        <div class="progress"><span class="active"></span><span></span></div>
+        <p class="eyebrow">Step 1 of 2</p>
+        <h2>Tell us a little about you</h2>
+        <p class="form-intro">This is optional. It can help us personalise your wellbeing experience later.</p>
+        <form id="profileForm">
+          <fieldset>
+            <legend>Gender</legend>
+            <div class="choice-grid three">
+              <label class="choice"><input type="radio" name="gender" value="Female"><span>Female</span></label>
+              <label class="choice"><input type="radio" name="gender" value="Male"><span>Male</span></label>
+              <label class="choice"><input type="radio" name="gender" value="Prefer not to say"><span>Prefer not to say</span></label>
+            </div>
+          </fieldset>
+          <div class="measurement-grid">
+            <div>
+              <label for="height">Height</label>
+              <div class="unit-input"><input id="height" type="number" min="80" max="250" placeholder="170"><span>cm</span></div>
+            </div>
+            <div>
+              <label for="weight">Weight</label>
+              <div class="unit-input"><input id="weight" type="number" min="20" max="300" step="0.1" placeholder="65"><span>kg</span></div>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="button secondary" data-go="connect">Skip for now</button>
+            <button type="submit" class="button primary">Save and continue</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </template>
+
+  <template id="connectTemplate">
+    <section class="screen centered-screen">
+      <div class="form-card wide">
+        <div class="progress"><span class="active"></span><span class="active"></span></div>
+        <p class="eyebrow">Step 2 of 2</p>
+        <h2>Who supports your wellbeing?</h2>
+        <p class="form-intro">Connect with someone you trust. You can choose what to share later.</p>
+
+        <form id="connectForm">
+          <label>Relationship</label>
+          <div class="choice-grid three">
+            <label class="choice"><input type="radio" name="relationship" value="Friend" checked><span>Friend</span></label>
+            <label class="choice"><input type="radio" name="relationship" value="Family"><span>Family</span></label>
+            <label class="choice"><input type="radio" name="relationship" value="Partner"><span>Partner</span></label>
+          </div>
+          <label for="connectionId">Their user ID</label>
+          <input id="connectionId" type="text" maxlength="12" placeholder="SW 482 917" />
+          <p class="field-error" id="connectionError"></p>
+          <div id="connectionResult"></div>
+          <div class="privacy-note"><span>◎</span><p><strong>You stay in control.</strong><br>Connecting does not automatically share private health information.</p></div>
+          <div class="form-actions">
+            <button type="button" class="button secondary" data-go="home">Skip for now</button>
+            <button type="submit" class="button primary">Send connection request</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </template>
+
+  <template id="homeTemplate">
+    <section class="home-screen">
+      <button class="checkin-hero" data-feature="clockin">
+        <span>Clock In</span>
+      </button>
+
+      <div class="home-lower">
+        <div class="feature-grid">
+          <button class="feature-tile" data-feature="steps">Steps</button>
+          <button class="feature-tile" data-feature="sleep">Sleep</button>
+          <button class="feature-tile" data-feature="stress">Stress</button>
+          <button class="feature-tile" data-feature="calories">Calories</button>
+          <button class="feature-tile" data-feature="reminder">Reminder</button>
+          <button class="reserved-circle" data-feature="mascot" aria-label="Open companion">
+            <span>Companion</span>
+            <img src="assets/ragdoll-cat.png" alt="Cat companion" />
+          </button>
+        </div>
+      </div>
+
+      <div class="clock-modal" id="clockModal" hidden>
+        <div class="clock-dialog" role="dialog" aria-modal="true" aria-labelledby="clockDialogTitle">
+          <h2 id="clockDialogTitle">Clock In</h2>
+          <div id="clockPanel">
+            <div class="clock-list">
+              <button data-clock-option="eating">Eating</button>
+              <button data-clock-option="drinking">Drinking</button>
+              <button data-clock-option="sports">Sports</button>
+              <button data-clock-option="optional">Optional</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <template id="featureTemplate">
+    <section class="feature-screen">
+      <button class="back-home" data-go="home">← Back</button>
+      <div class="feature-page-card">
+        <h2 id="featurePageTitle"></h2>
+        <div id="featurePageContent"></div>
+      </div>
+    </section>
+  </template>
+
+  <script src="app.js?v=24"></script>
+</body>
+</html>
