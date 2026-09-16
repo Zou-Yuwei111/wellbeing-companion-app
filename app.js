@@ -2,9 +2,33 @@ const app = document.querySelector('#app');
 const stepLabel = document.querySelector('#stepLabel');
 const toast = document.querySelector('#toast');
 
+const TEST_ACCOUNT = {
+  email: 'alex.morgan@example.com',
+  id: 'SW 246 810',
+  profile: { nickname: 'Alex Morgan', gender: 'Male', height: '178', weight: '74', updatedAt: '2026-09-15T08:30:00.000Z' },
+  connections: [],
+  demoData: {
+    stepsHistory: [6240, 8150, 7430, 9820, 10450, 7890, 9215],
+    sleepHistory: [7.1, 6.8, 7.6, 7.3, 8.0, 7.4, 7.7],
+    stressHistory: [3, 4, 3, 5, 4, 4, 5],
+    activeCalories: 486,
+    temperature: 36.5
+  }
+};
+
+function initialiseAccounts() {
+  const accounts = JSON.parse(localStorage.getItem('studywellAccounts') || '[]');
+  const legacyUser = JSON.parse(localStorage.getItem('studywellUser') || 'null');
+  if (legacyUser && !accounts.some(account => account.id === legacyUser.id)) accounts.push(legacyUser);
+  if (!accounts.some(account => account.id === TEST_ACCOUNT.id)) accounts.push(structuredClone(TEST_ACCOUNT));
+  localStorage.setItem('studywellAccounts', JSON.stringify(accounts));
+  return accounts;
+}
+
 const state = {
   mode: 'signup',
   code: '',
+  accounts: initialiseAccounts(),
   user: JSON.parse(localStorage.getItem('studywellUser') || 'null'),
   sportTypes: JSON.parse(localStorage.getItem('clockInSportTypes') || '[]'),
   drinkTypes: JSON.parse(localStorage.getItem('clockInDrinkTypes') || '["Water","Tea","Coffee","Milk","Cola"]'),
@@ -602,6 +626,9 @@ function setupAuth() {
   document.querySelector('#switchCopy').innerHTML = isSignup
     ? 'Already have an account? <button type="button" data-go="login">Log in</button>'
     : 'Need an account? <button type="button" data-go="signup">Create an account</button>';
+  if (!isSignup) {
+    document.querySelector('#authIntro').insertAdjacentHTML('afterend', '<p class="field-hint"><strong>Test account:</strong> alex.morgan@example.com<br><strong>User ID:</strong> SW 246 810</p>');
+  }
 
   const email = document.querySelector('#email');
   const code = document.querySelector('#code');
@@ -611,7 +638,7 @@ function setupAuth() {
       document.querySelector('#emailError').textContent = 'Please enter a valid email address.';
       return;
     }
-    if (!isSignup && (!state.user || state.user.email.toLowerCase() !== email.value.trim().toLowerCase())) {
+    if (!isSignup && !findAccountByEmail(email.value)) {
       document.querySelector('#emailError').textContent = 'No account was found for this email. Please sign up first.';
       return;
     }
@@ -636,10 +663,17 @@ function setupAuth() {
       return;
     }
     if (isSignup) {
+      if (findAccountByEmail(email.value)) {
+        document.querySelector('#emailError').textContent = 'An account already exists for this email. Please log in instead.';
+        return;
+      }
       state.user = { email: email.value.trim(), id: makeUniqueId(), profile: {}, connections: [] };
       saveUser();
       route('success');
     } else {
+      state.user = structuredClone(findAccountByEmail(email.value));
+      localStorage.setItem('studywellUser', JSON.stringify(state.user));
+      loadDemoData(state.user);
       showToast('Login successful');
       route('home', { login: true });
     }
@@ -647,12 +681,49 @@ function setupAuth() {
 }
 
 function makeUniqueId() {
-  const part = crypto.getRandomValues(new Uint32Array(1))[0] % 1000000;
-  return `SW ${String(part).padStart(6, '0').replace(/(\d{3})(\d{3})/, '$1 $2')}`;
+  let id;
+  do {
+    const part = crypto.getRandomValues(new Uint32Array(1))[0] % 1000000;
+    id = `SW ${String(part).padStart(6, '0').replace(/(\d{3})(\d{3})/, '$1 $2')}`;
+  } while (state.accounts.some(account => account.id === id));
+  return id;
 }
 
 function saveUser() {
   localStorage.setItem('studywellUser', JSON.stringify(state.user));
+  const index = state.accounts.findIndex(account => account.id === state.user.id);
+  if (index >= 0) state.accounts[index] = structuredClone(state.user);
+  else state.accounts.push(structuredClone(state.user));
+  saveAccounts();
+}
+
+function saveAccounts() {
+  localStorage.setItem('studywellAccounts', JSON.stringify(state.accounts));
+}
+
+function findAccountByEmail(value) {
+  const email = value.trim().toLowerCase();
+  return state.accounts.find(account => account.email.toLowerCase() === email);
+}
+
+function normaliseUserId(value) {
+  const digits = value.toUpperCase().replace(/[^0-9]/g, '').slice(0, 6);
+  return digits.length === 6 ? `SW ${digits.slice(0, 3)} ${digits.slice(3)}` : '';
+}
+
+function loadDemoData(account) {
+  if (!account.demoData) return;
+  const dates = Array.from({ length: 7 }, (_, index) => new Date(Date.now() - (6 - index) * 86400000).toISOString().slice(0, 10));
+  state.stepsHistory = account.demoData.stepsHistory.map((value, index) => ({ date: dates[index], value }));
+  state.sleepHistory = account.demoData.sleepHistory.map((value, index) => ({ date: dates[index], value, start: '23:05', end: '06:45', light: 3.6, deep: 1.7, rem: 1.8, awake: 0.5 }));
+  state.stressHistory = account.demoData.stressHistory.map((mood, index) => ({ date: dates[index], mood, note: index === 6 ? 'Good day, finished work and took an evening walk.' : '' }));
+  state.wearableData = { connected: true, source: 'Alex’s Apple Watch', temperature: account.demoData.temperature, activeCalories: account.demoData.activeCalories };
+  state.measurementHistory = { height: [{ value: Number(account.profile.height), timestamp: account.profile.updatedAt }], weight: [{ value: Number(account.profile.weight), timestamp: account.profile.updatedAt }] };
+  localStorage.setItem('stepsHistory', JSON.stringify(state.stepsHistory));
+  localStorage.setItem('sleepHistory', JSON.stringify(state.sleepHistory));
+  localStorage.setItem('stressHistory', JSON.stringify(state.stressHistory));
+  localStorage.setItem('wearableData', JSON.stringify(state.wearableData));
+  localStorage.setItem('measurementHistory', JSON.stringify(state.measurementHistory));
 }
 
 function setupSuccess() {
@@ -692,16 +763,34 @@ function setupConnect() {
   form.addEventListener('submit', event => {
     event.preventDefault();
     const input = document.querySelector('#connectionId');
-    const value = input.value.trim().toUpperCase();
-    if (!/^SW\s?\d{3}\s?\d{3}$/.test(value)) {
+    const value = normaliseUserId(input.value);
+    if (!value) {
       document.querySelector('#connectionError').textContent = 'Enter an ID in the format SW 123 456.';
       return;
     }
     document.querySelector('#connectionError').textContent = '';
+    const targetAccount = state.accounts.find(account => account.id === value);
+    if (!targetAccount) {
+      document.querySelector('#connectionError').textContent = 'No saved account was found for this ID.';
+      return;
+    }
+    if (targetAccount.id === state.user.id) {
+      document.querySelector('#connectionError').textContent = 'You cannot connect your account to itself.';
+      return;
+    }
+    if (state.user.connections.some(connection => connection.id === value)) {
+      document.querySelector('#connectionError').textContent = 'This account is already connected.';
+      return;
+    }
     const relationship = new FormData(form).get('relationship');
-    state.user.connections.push({ id: value, relationship });
+    state.user.connections.push({ id: value, relationship, nickname: targetAccount.profile?.nickname || targetAccount.email });
+    targetAccount.connections ||= [];
+    if (!targetAccount.connections.some(connection => connection.id === state.user.id)) {
+      targetAccount.connections.push({ id: state.user.id, relationship, nickname: state.user.profile?.nickname || state.user.email });
+    }
     saveUser();
-    document.querySelector('#connectionResult').innerHTML = `<div class="connection-success">Connection request sent to ${value}</div>`;
+    saveAccounts();
+    document.querySelector('#connectionResult').innerHTML = `<div class="connection-success">Connected with ${escapeHtml(targetAccount.profile?.nickname || targetAccount.email)} (${value})</div>`;
     window.setTimeout(() => route('home'), 900);
   });
 }
@@ -723,7 +812,8 @@ function setupFeature(featureKey) {
   if (featureKey === 'profile') {
     const nickname = state.user?.profile?.nickname || 'Your nickname';
     const userId = state.user?.id || '';
-    content.innerHTML = `<div class="health-dashboard"><div class="metric-main"><strong>${escapeHtml(nickname)}</strong><span>${escapeHtml(userId)}</span></div><p class="data-note">Your profile photo, nickname and account settings will appear here.</p></div>`;
+    const connections = state.user?.connections || [];
+    content.innerHTML = `<div class="health-dashboard"><div class="metric-main"><strong>${escapeHtml(nickname)}</strong><span>${escapeHtml(userId)}</span></div><div class="source-row"><span>Email</span><b>${escapeHtml(state.user.email)}</b></div><div class="source-row"><span>Height / Weight</span><b>${escapeHtml(state.user.profile?.height || '—')} cm · ${escapeHtml(state.user.profile?.weight || '—')} kg</b></div><div class="source-row"><span>Connections</span><b>${connections.length}</b></div>${connections.map(connection => `<div class="connection-success">${escapeHtml(connection.nickname || connection.id)} · ${escapeHtml(connection.relationship)}</div>`).join('')}<button class="button secondary full" data-feature-action="logout">Log out</button></div>`;
     return;
   }
   if (['steps', 'sleep', 'calories', 'stress', 'reminder', 'mascot'].includes(featureKey)) {
@@ -870,6 +960,13 @@ function showReminderEditor(type) {
 }
 
 function handleFeatureAction(action, element) {
+  if (action === 'logout') {
+    localStorage.removeItem('studywellUser');
+    state.user = null;
+    state.code = '';
+    route('welcome');
+    return;
+  }
   if(action==='preview-state'){state.mascotSettings.demoState=element.dataset.state;localStorage.setItem('mascotSettings',JSON.stringify(state.mascotSettings));renderMascot();return;}
   if (action === 'choose-animal') { state.mascotSettings.animal=element.dataset.animal; delete state.mascotSettings.customImage; localStorage.setItem('mascotSettings',JSON.stringify(state.mascotSettings)); renderMascot(); return; }
   if (action === 'generate-mascot') {
