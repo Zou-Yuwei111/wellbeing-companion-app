@@ -38,6 +38,7 @@ const features = {
   calories: { title: 'Calories' },
   reminder: { title: 'Reminder' },
   mascot: { title: 'Companion' },
+  profile: { title: 'Profile' },
   reserved: { title: 'Reserved Page' }
 };
 
@@ -719,6 +720,12 @@ function setupFeature(featureKey) {
   const feature = features[featureKey] || features.reserved;
   document.querySelector('#featurePageTitle').textContent = feature.title;
   const content = document.querySelector('#featurePageContent');
+  if (featureKey === 'profile') {
+    const nickname = state.user?.profile?.nickname || 'Your nickname';
+    const userId = state.user?.id || '';
+    content.innerHTML = `<div class="health-dashboard"><div class="metric-main"><strong>${escapeHtml(nickname)}</strong><span>${escapeHtml(userId)}</span></div><p class="data-note">Your profile photo, nickname and account settings will appear here.</p></div>`;
+    return;
+  }
   if (['steps', 'sleep', 'calories', 'stress', 'reminder', 'mascot'].includes(featureKey)) {
     renderHealthFeature(featureKey, content);
     return;
