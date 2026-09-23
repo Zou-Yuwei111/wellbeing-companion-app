@@ -119,6 +119,34 @@ function addProfileSettings(content) {
   section.innerHTML = `<h2>Edit profile</h2><label for="editAvatar">Change avatar</label><input id="editAvatar" type="file" accept="image/png,image/jpeg,image/webp"><label for="editNickname">Nickname</label><input id="editNickname" maxlength="50"><button class="button primary full" id="saveProfileDetails">Save profile</button><p id="profileFeedback" role="status"></p><details><summary>Settings</summary><label for="themeColor">Custom theme color</label><input id="themeColor" type="color"><h3>Home screen modules</h3><p>Select the modules you want to show.</p><div id="moduleSettings"></div></details>`;
   content.prepend(section);
   section.querySelector('#editNickname').value = profile.nickname || '';
+  const saveButton = section.querySelector('#saveProfileDetails');
+  for (const [field, unit] of [['height', 'cm'], ['weight', 'kg']]) {
+    const label = document.createElement('label'); label.textContent = `${field === 'height' ? 'Height' : 'Weight'} (${unit})`;
+    const input = document.createElement('input'); input.id = `edit-${field}`; input.type = 'number'; input.min = '0.1'; input.step = '0.1'; input.value = profile[field] || '';
+    label.append(input); saveButton.before(label);
+  }
+  const sharing = document.createElement('details');
+  sharing.innerHTML = '<summary>Partner data sharing</summary><p>Choose what your connected partner can view. Unchecked categories stay private. This demo connects accounts saved in this browser.</p>';
+  const categories = {height:'Height',weight:'Weight',steps:'Steps',sleep:'Sleep',stress:'Stress',calories:'Calories',period:'Period'};
+  for (const [key, label] of Object.entries(categories)) {
+    const row = document.createElement('label'); row.className = 'module-setting';
+    const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = profile.partnerSharing?.[key] === true;
+    checkbox.addEventListener('change', () => { profile.partnerSharing ||= {}; profile.partnerSharing[key] = checkbox.checked; if (key === 'period') state.user.periodSharing = checkbox.checked; saveUser(); });
+    row.append(checkbox, document.createTextNode(label)); sharing.append(row);
+  }
+  section.append(sharing);
+  const partner = state.accounts.find(account => account.id === partnerConnection()?.id);
+  if (partner) {
+    const shared = document.createElement('div');
+    const heading = document.createElement('h3'); heading.textContent = `${partner.profile?.nickname || 'Partner'} shared data`; shared.append(heading);
+    for (const [key, label] of Object.entries(categories)) {
+      const p = document.createElement('p');
+      const value = ['height','weight'].includes(key) ? partner.profile?.[key] : partner.sharedSummary?.[key];
+      p.textContent = `${label}: ${partner.profile?.partnerSharing?.[key] === true ? (value ?? 'No data') : 'Not shared'}`;
+      shared.append(p);
+    }
+    section.append(shared);
+  }
   let avatarData = profile.avatar;
   section.querySelector('#editAvatar').addEventListener('change', async event => {
     const file = event.target.files[0];
@@ -134,6 +162,16 @@ function addProfileSettings(content) {
     } catch { feedback.textContent = 'Unable to open this image. Please choose another image.'; }
   });
   section.querySelector('#saveProfileDetails').addEventListener('click', () => {
+    for (const field of ['height','weight']) {
+      const input = section.querySelector(`#edit-${field}`);
+      if (input.value && (!Number.isFinite(Number(input.value)) || Number(input.value) <= 0)) return showToast('Enter a valid height and weight.');
+    }
+    for (const field of ['height','weight']) {
+      const value = section.querySelector(`#edit-${field}`).value;
+      if (value && value !== String(profile[field] || '')) state.measurementHistory[field].push({value:Number(value),timestamp:new Date().toISOString()});
+      profile[field] = value;
+    }
+    localStorage.setItem('measurementHistory', JSON.stringify(state.measurementHistory));
     profile.nickname = section.querySelector('#editNickname').value.trim();
     profile.avatar = avatarData;
     saveUser(); setupFeature('profile'); applyPersonalSettings(); showToast('Profile saved');
@@ -824,6 +862,13 @@ function makeUniqueId() {
 }
 
 function saveUser() {
+  state.user.sharedSummary = {
+    steps: state.stepsHistory.at(-1)?.value ?? 'No data',
+    sleep: state.sleepHistory.at(-1)?.value ?? 'No data',
+    stress: state.stressHistory.at(-1)?.mood ?? 'No data',
+    calories: todayClockRecords().filter(r => ['Eating','Drinking'].includes(r.category)).reduce((sum,r) => sum + Number(r.details.calories || 0), 0),
+    period: state.periodHistory.at(-1)?.date ?? 'No data'
+  };
   localStorage.setItem('studywellUser', JSON.stringify(state.user));
   const index = state.accounts.findIndex(account => account.id === state.user.id);
   if (index >= 0) state.accounts[index] = structuredClone(state.user);
@@ -1084,9 +1129,52 @@ function reminderStatus(type) {
   return `Predicted around ${predicted.toLocaleDateString('en-AU',{day:'numeric',month:'short'})}`;
 }
 
+function showReminderNotice(message) {
+  let tray = document.querySelector('#reminderNotices');
+  if (!tray) {
+    tray = document.createElement('div'); tray.id = 'reminderNotices';
+    tray.setAttribute('aria-live', 'polite'); document.body.append(tray);
+  }
+  const notice = document.createElement('div'); notice.className = 'reminder-notice';
+  const text = document.createElement('p'); text.textContent = message;
+  const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.textContent = 'Dismiss';
+  dismiss.addEventListener('click', () => notice.remove());
+  notice.append(text, dismiss); tray.append(notice);
+}
+
+function checkDueReminders(now = new Date()) {
+  if (!state.user || document.visibilityState === 'hidden') return;
+  const day = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const key = `reminderDelivered:${state.user.id}:${day}`;
+  const delivered = JSON.parse(localStorage.getItem(key) || '{}');
+  for (const type of ['exercise', 'period', 'food', 'water']) {
+    const setting = state.reminderSettings[type];
+    if (!setting?.enabled || !/^\d{2}:\d{2}$/.test(setting.time || '')) continue;
+    const [hour, minute] = setting.time.split(':').map(Number);
+    if (now.getHours()*60+now.getMinutes() < hour*60+minute) continue;
+    const signature = JSON.stringify(setting);
+    if (delivered[type] === signature) continue;
+    const status = reminderStatus(type);
+    if (status === 'Goal reached') continue;
+    if (type === 'period') {
+      const latest = state.periodHistory.at(-1)?.date;
+      if (!latest) continue;
+      const predicted = new Date(`${latest}T00:00:00`);
+      predicted.setDate(predicted.getDate()+Number(setting.cycle || 28)-3);
+      if (now < predicted) continue;
+    }
+    showReminderNotice(`${type.charAt(0).toUpperCase()+type.slice(1)} reminder: ${status}${type === 'period' ? '. This date is an estimate.' : '.'}`);
+    delivered[type] = signature;
+  }
+  localStorage.setItem(key, JSON.stringify(delivered));
+}
+
 function renderReminderDashboard(content = document.querySelector('#featurePageContent')) {
   const types = [['exercise','Exercise'],['period','Period'],['food','Food'],['water','Water']];
   content.innerHTML = `<div class="reminder-dashboard"><p class="data-note">Reminders are checked against your saved daily records.</p><div class="reminder-grid">${types.map(([type,label])=>`<button data-feature-action="edit-reminder" data-reminder-type="${type}"><b>${label}</b><small>${reminderStatus(type)}</small><span>${state.reminderSettings[type]?.enabled ? state.reminderSettings[type].time : 'Set reminder'}</span></button>`).join('')}</div><div id="reminderEditor"></div></div>`;
+  const test = document.createElement('button'); test.className = 'button secondary full'; test.textContent = 'Test Reminder';
+  test.addEventListener('click', () => showReminderNotice('Test reminder: your reminders can appear here while this page is open.'));
+  content.append(test);
 }
 
 function showReminderEditor(type) {
@@ -1123,7 +1211,8 @@ function handleFeatureAction(action, element) {
     const setting={enabled:document.querySelector('#reminderEnabled').checked,time:document.querySelector('#reminderTime').value};
     if(type==='period') setting.cycle=Number(document.querySelector('#reminderCycle').value);
     else setting.target=Number(document.querySelector('#reminderTarget').value);
-    state.reminderSettings[type]=setting; localStorage.setItem('reminderSettings',JSON.stringify(state.reminderSettings)); renderReminderDashboard(); return showToast('Reminder saved locally');
+    if (!setting.time || (type === 'period' ? !Number.isFinite(setting.cycle) || setting.cycle < 20 || setting.cycle > 45 : !Number.isFinite(setting.target) || setting.target <= 0)) return showToast('Enter a valid time and a positive goal. Cycle length must be 20 to 45 days.');
+    state.reminderSettings[type]=setting; localStorage.setItem('reminderSettings',JSON.stringify(state.reminderSettings)); renderReminderDashboard(); checkDueReminders(); return showToast('Reminder saved locally');
   }
   if (action === 'sync-demo') {
     syncDemoWearable();
@@ -1149,3 +1238,7 @@ if ('serviceWorker' in navigator) {
 }
 
 route(state.user ? 'home' : 'welcome');
+setInterval(checkDueReminders, 5000);
+document.addEventListener('visibilitychange', () => checkDueReminders());
+window.addEventListener('focus', () => checkDueReminders());
+checkDueReminders();

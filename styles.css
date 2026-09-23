@@ -453,3 +453,7 @@ fieldset { border:0; padding:0; margin:0; }
 .home-screen { background:var(--mint) !important; }
 .checkin-hero { background:var(--green) !important; color:white !important; }
 .feature-tile, .reserved-circle span, .home-avatar { color:var(--green) !important; }
+#reminderNotices { position:fixed; top: max(16px, env(safe-area-inset-top)); left:50%; transform:translateX(-50%); width:min(92vw,420px); max-height:70vh; overflow:auto; z-index:1000; }
+.reminder-notice { background:white; color:#2b2038; border:2px solid var(--green); padding:16px; border-radius:18px; box-shadow:0 8px 28px #0002; margin-bottom:10px; }
+.reminder-notice p { margin:0 0 12px; }
+.reminder-notice button { background:var(--green); color:white; border:0; border-radius:10px; padding:10px 16px; cursor:pointer; }
