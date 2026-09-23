@@ -126,7 +126,7 @@ function addProfileSettings(content) {
     label.append(input); saveButton.before(label);
   }
   const sharing = document.createElement('details');
-  sharing.innerHTML = '<summary>Partner data sharing</summary><p>Choose what your connected partner can view. Unchecked categories stay private. This demo connects accounts saved in this browser.</p>';
+  sharing.innerHTML = '<summary>Partner data sharing</summary><p><strong>Test Partner: Alex Morgan</strong><br>Email: alex.morgan@example.com<br>Partner ID: <strong>SW 246 810</strong><br>Use this ID in Add Partner from your own account. To test the partner side, log in with the email above.</p><p>Choose what your connected partner can view. Unchecked categories stay private. This demo connects accounts saved in this browser.</p>';
   const categories = {height:'Height',weight:'Weight',steps:'Steps',sleep:'Sleep',stress:'Stress',calories:'Calories',period:'Period'};
   for (const [key, label] of Object.entries(categories)) {
     const row = document.createElement('label'); row.className = 'module-setting';
@@ -799,7 +799,7 @@ function setupAuth() {
     ? 'Already have an account? <button type="button" data-go="login">Log in</button>'
     : 'Need an account? <button type="button" data-go="signup">Create an account</button>';
   if (!isSignup) {
-    document.querySelector('#authIntro').insertAdjacentHTML('afterend', '<p class="field-hint"><strong>Test account:</strong> alex.morgan@example.com<br><strong>User ID:</strong> SW 246 810</p>');
+    document.querySelector('#authIntro').insertAdjacentHTML('afterend', '<p class="field-hint"><strong>Test Partner: Alex Morgan</strong><br>Email: alex.morgan@example.com<br>Partner ID: <strong>SW 246 810</strong><br>No password needed. Select Send Code and enter the code shown on screen. To connect this partner, use the ID above from your own account.</p>');
   }
 
   const email = document.querySelector('#email');
@@ -939,7 +939,7 @@ function setupProfile() {
 function setupConnect() {
   if (!state.user) return route('signup');
   const form = document.querySelector('#connectForm');
-  form.insertAdjacentHTML('beforebegin', '<p class="field-hint">Demo partner: Alex Morgan · ID: SW 246 810</p>');
+  form.insertAdjacentHTML('beforebegin', '<p class="field-hint"><strong>Test Partner: Alex Morgan</strong><br>Email: alex.morgan@example.com<br>Partner ID: <strong>SW 246 810</strong><br>Enter this ID below from your own account to try connecting a partner.</p>');
   form.querySelector('input[value="Partner"]').checked = true;
   form.addEventListener('submit', event => {
     event.preventDefault();
