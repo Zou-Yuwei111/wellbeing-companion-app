@@ -87,6 +87,65 @@ function route(screen, options = {}) {
   if (screen === 'connect') setupConnect();
   if (screen === 'home') setupHome(options.login);
   if (screen === 'feature') setupFeature(options.feature);
+  applyPersonalSettings();
+}
+
+function applyPersonalSettings() {
+  const profile = state.user?.profile || {};
+  const color = /^#[0-9a-f]{6}$/i.test(profile.themeColor || '') ? profile.themeColor : '#7952b3';
+  for (const key of ['--green', '--green-dark', '--purple']) document.documentElement.style.setProperty(key, color);
+  document.documentElement.style.setProperty('--mint', `color-mix(in srgb, ${color} 10%, white)`);
+  document.documentElement.style.setProperty('--sage', `color-mix(in srgb, ${color} 18%, white)`);
+  const avatar = document.querySelector('.home-avatar');
+  if (avatar && profile.avatar?.startsWith('data:image/')) {
+    const img = document.createElement('img'); img.src = profile.avatar; img.alt = 'Your avatar'; avatar.replaceChildren(img);
+  }
+  const grid = document.querySelector('.feature-grid');
+  if (grid) {
+    let count = 0;
+    grid.querySelectorAll('[data-feature]').forEach(button => {
+      button.hidden = profile.visibleModules?.[button.dataset.feature] === false;
+      if (!button.hidden) count++;
+    });
+    grid.classList.toggle('custom-layout', count < 6);
+    grid.style.gridTemplateRows = `repeat(${Math.max(1, Math.ceil(count / 2))}, minmax(0, 1fr))`;
+  }
+}
+
+function addProfileSettings(content) {
+  const profile = state.user.profile || (state.user.profile = {});
+  const section = document.createElement('section');
+  section.className = 'profile-settings';
+  section.innerHTML = `<h2>Edit profile</h2><label for="editAvatar">Change avatar</label><input id="editAvatar" type="file" accept="image/png,image/jpeg,image/webp"><label for="editNickname">Nickname</label><input id="editNickname" maxlength="50"><button class="button primary full" id="saveProfileDetails">Save profile</button><p id="profileFeedback" role="status"></p><details><summary>Settings</summary><label for="themeColor">Custom theme color</label><input id="themeColor" type="color"><h3>Home screen modules</h3><p>Select the modules you want to show.</p><div id="moduleSettings"></div></details>`;
+  content.prepend(section);
+  section.querySelector('#editNickname').value = profile.nickname || '';
+  let avatarData = profile.avatar;
+  section.querySelector('#editAvatar').addEventListener('change', async event => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const feedback = section.querySelector('#profileFeedback');
+    try {
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+      const size = Math.min(bitmap.width, bitmap.height);
+      canvas.getContext('2d').drawImage(bitmap, (bitmap.width-size)/2, (bitmap.height-size)/2, size, size, 0, 0, 256, 256);
+      avatarData = canvas.toDataURL('image/jpeg', 0.85); bitmap.close();
+      feedback.textContent = 'Image selected. Save your profile to apply.';
+    } catch { feedback.textContent = 'Unable to open this image. Please choose another image.'; }
+  });
+  section.querySelector('#saveProfileDetails').addEventListener('click', () => {
+    profile.nickname = section.querySelector('#editNickname').value.trim();
+    profile.avatar = avatarData;
+    saveUser(); setupFeature('profile'); applyPersonalSettings(); showToast('Profile saved');
+  });
+  const color = section.querySelector('#themeColor'); color.value = profile.themeColor || '#7952b3';
+  color.addEventListener('input', () => { profile.themeColor = color.value; saveUser(); applyPersonalSettings(); });
+  for (const [key, label] of Object.entries({steps:'Steps', sleep:'Sleep', stress:'Stress', calories:'Calories', reminder:'Reminder', mascot:'Companion'})) {
+    const row = document.createElement('label'); row.className = 'module-setting';
+    const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = profile.visibleModules?.[key] !== false;
+    checkbox.addEventListener('change', () => { profile.visibleModules ||= {}; profile.visibleModules[key] = checkbox.checked; saveUser(); });
+    row.append(checkbox, document.createTextNode(label)); section.querySelector('#moduleSettings').append(row);
+  }
 }
 
 document.addEventListener('click', event => {
@@ -215,14 +274,17 @@ function renderEatingPanel() {
   panel.innerHTML = `${timestampRow()}
     <div class="eating-fields">
       <label class="mini-label" for="foodName">Food name</label>
-      <input id="foodName" placeholder="e.g. Rice">
+      <input id="foodName" placeholder="Search or enter a food" autocomplete="off" aria-controls="foodSuggestions">
+      <div id="foodSuggestions" hidden></div>
       <label class="mini-label" for="foodGrams">Amount</label>
       <div class="minute-input"><input id="foodGrams" type="number" min="1" max="5000" placeholder="100"><span>grams</span></div>
-      <label class="mini-label" for="foodCaloriesPer100g">Calories (only needed if food is not found)</label>
-      <div class="minute-input"><input id="foodCaloriesPer100g" type="number" min="0" max="2000" placeholder="Auto"><span>kcal / 100 g</span></div>
-      <div class="calorie-result"><span>Estimated calories</span><strong id="calorieValue">0 kcal</strong></div>
-      <label class="photo-button" for="foodPhoto">Take photo or upload image</label>
+      <label class="mini-label" for="foodCaloriesPer100g">Calories</label>
+      <div class="minute-input"><input id="foodCaloriesPer100g" type="number" min="0" placeholder="Auto or enter manually"><span>kcal</span></div>
+      <p class="photo-note">Estimated total for your portion. You can edit this value.</p>
+      <label class="photo-button" for="foodPhoto">Take Photo</label>
       <input class="photo-input" id="foodPhoto" type="file" accept="image/*" capture="environment">
+      <label class="photo-button" for="foodUpload">Upload Image</label>
+      <input class="photo-input" id="foodUpload" type="file" accept="image/*">
       <div id="photoPreview"></div>
       <button class="analyse-button" type="button" data-clock-action="analyse-photo" disabled>Analyse photo</button>
       <p class="photo-note">Photo recognition is simulated in this local prototype.</p>
@@ -233,16 +295,35 @@ function renderEatingPanel() {
   const name = document.querySelector('#foodName');
   const grams = document.querySelector('#foodGrams');
   const manualCalories = document.querySelector('#foodCaloriesPer100g');
-  const update = () => updateCalories(name.value, grams.value, manualCalories.value);
-  name.addEventListener('input', update);
-  grams.addEventListener('input', update);
-  manualCalories.addEventListener('input', update);
+  const suggestions = document.querySelector('#foodSuggestions');
+  const suggest = () => {
+    const matches = Object.keys(foodCalories).filter(food => food.includes(name.value.trim().toLowerCase()));
+    suggestions.replaceChildren();
+    suggestions.hidden = false;
+    matches.forEach(food => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'modal-back';
+      button.textContent = food.charAt(0).toUpperCase() + food.slice(1);
+      button.addEventListener('click', () => {
+        name.value = button.textContent;
+        suggestions.hidden = true;
+        updateCalories(name.value, grams.value);
+      });
+      suggestions.append(button);
+    });
+    if (!matches.length) suggestions.textContent = 'No matching food. Enter your food name and calories manually.';
+  };
+  attachQuickChoices(name, Object.keys(foodCalories).map(food => food.charAt(0).toUpperCase() + food.slice(1)), () => updateCalories(name.value, grams.value));
+  name.addEventListener('input', () => updateCalories(name.value, grams.value));
+  grams.addEventListener('input', () => updateCalories(name.value, grams.value));
   document.querySelector('#foodPhoto').addEventListener('change', handleFoodPhoto);
+  document.querySelector('#foodUpload').addEventListener('change', handleFoodPhoto);
 }
 
 function caloriesPer100g(foodName) {
   const normalised = foodName.trim().toLowerCase();
-  const match = Object.keys(foodCalories).find(food => normalised.includes(food));
+  const match = Object.keys(foodCalories).find(food => normalised === food);
   return match ? foodCalories[match] : null;
 }
 
@@ -253,6 +334,8 @@ function updateCalories(foodName, grams, manualValue = '') {
     ? Math.round(referenceValue * amount / 100) : 0;
   const output = document.querySelector('#calorieValue');
   if (output) output.textContent = `${calories} kcal`;
+  const input = document.querySelector('#foodCaloriesPer100g');
+  if (input) input.value = referenceValue !== null && amount > 0 ? calories : '';
   return calories;
 }
 
@@ -314,6 +397,12 @@ function renderDrinkingPanel() {
       <button class="modal-primary" data-clock-action="save-drinking">Save record</button>
     </div><button class="modal-back" data-clock-action="root">← Back</button>`;
   document.querySelectorAll('input[name="drinkType"]').forEach(input => input.addEventListener('change', updateDrinkCalories));
+  attachQuickChoices(document.querySelector('#newDrinkType'), ['Water', 'Tea', 'Coffee', 'Milk', 'Cola', 'Orange juice', 'Sports drink', 'Energy drink', 'Smoothie', 'Lemonade'], value => {
+    document.querySelector('#newDrinkCalories').value = drinkCalories[value.toLowerCase()] ?? '';
+    document.querySelector('[data-clock-action="add-drink"]').click();
+    document.querySelectorAll('input[name="drinkType"]').forEach(input => { input.checked = input.value.toLowerCase() === value.toLowerCase(); });
+    updateDrinkCalories();
+  });
   document.querySelector('#drinkMillilitres').addEventListener('input', updateDrinkCalories);
 }
 
@@ -324,13 +413,58 @@ function renderSportsPanel() {
     : '<p class="empty-sports">Add a sport type to begin.</p>';
   panel.innerHTML = `${timestampRow()}<div class="sports-half">
       <label class="mini-label" for="newSportType">Sport type</label>
-      <div class="add-sport-row"><input id="newSportType" maxlength="24" placeholder="e.g. Swimming"><button type="button" data-clock-action="add-sport">Add</button></div>
+      <div class="add-sport-row"><input id="newSportType" maxlength="24" placeholder="Select or search a sport"><button type="button" data-clock-action="add-sport">Add</button></div>
       <div class="saved-sports">${options}</div>
     </div><div class="sports-half duration-half">
       <label class="mini-label" for="sportMinutes">Duration</label>
       <div class="minute-input"><input id="sportMinutes" type="number" min="1" max="1440" placeholder="30"><span>minutes</span></div>
       <p class="clock-error" id="sportError"></p><button class="modal-primary" data-clock-action="save-sport">Save record</button>
     </div><button class="modal-back" data-clock-action="root">← Back</button>`;
+  attachQuickChoices(document.querySelector('#newSportType'), ['Walking', 'Running', 'Swimming', 'Cycling', 'Yoga', 'Football', 'Basketball', 'Tennis', 'Dancing', 'Hiking', 'Pilates', 'Strength training', ...state.sportTypes], value => {
+    if (!state.sportTypes.includes(value)) {
+      state.sportTypes.push(value);
+      localStorage.setItem('clockInSportTypes', JSON.stringify(state.sportTypes));
+      renderSportsPanel();
+    }
+    document.querySelectorAll('input[name="sportType"]').forEach(input => { input.checked = input.value === value; });
+  });
+}
+
+function attachQuickChoices(input, choices, onSelect) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'quick-choice-wrapper';
+  input.before(wrapper);
+  wrapper.append(input);
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'quick-choice-toggle';
+  toggle.textContent = '▾';
+  toggle.setAttribute('aria-label', 'Show choices');
+  wrapper.append(toggle);
+  const list = document.createElement('div');
+  list.className = 'quick-choice-list';
+  list.hidden = true;
+  wrapper.append(list);
+  const show = (query = '') => {
+    list.replaceChildren();
+    list.hidden = false;
+    [...new Set(choices)].filter(value => value.toLowerCase().includes(query.toLowerCase())).forEach(value => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = value;
+      button.addEventListener('click', () => {
+        input.value = value;
+        list.hidden = true;
+        if (onSelect) onSelect(value);
+      });
+      list.append(button);
+    });
+    if (!list.children.length) list.textContent = 'No matches. You can add your own.';
+  };
+  input.addEventListener('focus', () => show());
+  input.addEventListener('input', () => show(input.value));
+  toggle.addEventListener('click', () => list.hidden ? show() : list.hidden = true);
+  wrapper.addEventListener('focusout', event => { if (!wrapper.contains(event.relatedTarget)) list.hidden = true; });
 }
 
 function showOptionalEntry(field) {
@@ -523,7 +657,7 @@ function handleClockAction(action, element) {
     if (!detected) {
       document.querySelector('#eatingError').textContent = 'No valid food was recognised. Please upload another image.';
       document.querySelector('#foodName').value = '';
-      document.querySelector('#calorieValue').textContent = '0 kcal';
+      document.querySelector('#foodCaloriesPer100g').value = '';
       return;
     }
     document.querySelector('#eatingError').textContent = '';
@@ -538,23 +672,23 @@ function handleClockAction(action, element) {
     const food = document.querySelector('#foodName').value.trim();
     const grams = Number(document.querySelector('#foodGrams').value);
     const manualCalories = document.querySelector('#foodCaloriesPer100g').value.trim();
-    if (!food || grams < 1) {
+    if (!food || !Number.isFinite(grams) || grams < 1) {
       document.querySelector('#eatingError').textContent = 'Enter a food name and amount.';
       return;
     }
-    if (caloriesPer100g(food) === null && manualCalories === '') {
-      document.querySelector('#eatingError').textContent = 'No calorie information was found. Please enter kcal per 100 g manually.';
+    if (manualCalories === '') {
+      document.querySelector('#eatingError').textContent = 'No calorie information was found. Please enter total calories manually.';
       document.querySelector('#foodCaloriesPer100g').focus();
       return;
     }
-    const referenceCalories = manualCalories === '' ? caloriesPer100g(food) : Number(manualCalories);
+    const referenceCalories = Number(manualCalories) * 100 / grams;
     if (!Number.isFinite(referenceCalories) || referenceCalories < 0) {
-      document.querySelector('#eatingError').textContent = 'Enter a valid kcal value per 100 g.';
+      document.querySelector('#eatingError').textContent = 'Enter a valid calorie value.';
       return;
     }
     return saveClockRecord('Eating', {
       food, grams, caloriesPer100g: referenceCalories,
-      calories: updateCalories(food, grams, String(referenceCalories))
+      calories: Number(manualCalories)
     });
   }
   if (action === 'save-sport') {
@@ -753,13 +887,15 @@ function setupProfile() {
     });
     localStorage.setItem('measurementHistory', JSON.stringify(state.measurementHistory));
     saveUser();
-    route('connect');
+    route('home');
   });
 }
 
 function setupConnect() {
   if (!state.user) return route('signup');
   const form = document.querySelector('#connectForm');
+  form.insertAdjacentHTML('beforebegin', '<p class="field-hint">Demo partner: Alex Morgan · ID: SW 246 810</p>');
+  form.querySelector('input[value="Partner"]').checked = true;
   form.addEventListener('submit', event => {
     event.preventDefault();
     const input = document.querySelector('#connectionId');
@@ -814,6 +950,12 @@ function setupFeature(featureKey) {
     const userId = state.user?.id || '';
     const connections = state.user?.connections || [];
     content.innerHTML = `<div class="health-dashboard"><div class="metric-main"><strong>${escapeHtml(nickname)}</strong><span>${escapeHtml(userId)}</span></div><div class="source-row"><span>Email</span><b>${escapeHtml(state.user.email)}</b></div><div class="source-row"><span>Height / Weight</span><b>${escapeHtml(state.user.profile?.height || '—')} cm · ${escapeHtml(state.user.profile?.weight || '—')} kg</b></div><div class="source-row"><span>Connections</span><b>${connections.length}</b></div>${connections.map(connection => `<div class="connection-success">${escapeHtml(connection.nickname || connection.id)} · ${escapeHtml(connection.relationship)}</div>`).join('')}<button class="button secondary full" data-feature-action="logout">Log out</button></div>`;
+    addProfileSettings(content);
+    const partnerButton = document.createElement('button');
+    partnerButton.className = 'button primary full';
+    partnerButton.textContent = 'Add Partner';
+    partnerButton.addEventListener('click', () => route('connect'));
+    content.prepend(partnerButton);
     return;
   }
   if (['steps', 'sleep', 'calories', 'stress', 'reminder', 'mascot'].includes(featureKey)) {

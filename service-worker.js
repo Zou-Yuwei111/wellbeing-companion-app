@@ -1,4 +1,4 @@
-const CACHE = 'wellbeing-v3';
+const CACHE = 'wellbeing-v4';
 const APP_FILES = [
   './', './index.html', './styles.css?v=29', './app.js?v=26', './manifest.webmanifest',
   './assets/ragdoll-cat.png', './assets/shiba-dog.png', './assets/grey-rabbit.png',
